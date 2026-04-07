@@ -1,0 +1,96 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+model Repository {
+  id          String             @id @default(uuid())
+  name        String             @unique
+  gitUrl      String
+  branch      String             @default("main")
+  serviceId   String             @unique
+  lastIndexed DateTime?
+  status      RepositoryStatus   @default(PENDING)
+  metadata    Json?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  chunks      Chunk[]
+  serviceNode ServiceNode?
+}
+
+model ServiceNode {
+  id           String     @id @default(uuid())
+  repositoryId String     @unique
+  repository   Repository @relation(fields: [repositoryId], references: [id])
+  name         String
+  description  String?
+  routes       Json
+  schema       Json
+  publishes    Json
+  subscribes   Json
+  dependencies Json
+  techStack    String?
+  keyFiles     Json
+  envVars      Json
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Chunk {
+  id           String    @id @default(uuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id])
+  serviceId    String
+  chunkType    ChunkType
+  filePath     String
+  content      String
+  embedding    Unsupported("vector(1536)")
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+
+  @@index([serviceId])
+}
+
+model DependencyEdge {
+  id          String   @id @default(uuid())
+  fromService String
+  toService   String
+  edgeType    EdgeType
+  detail      String?
+  createdAt   DateTime @default(now())
+
+  @@unique([fromService, toService, edgeType, detail])
+}
+
+enum RepositoryStatus {
+  PENDING
+  CLONING
+  EXTRACTING
+  EMBEDDING
+  READY
+  FAILED
+}
+
+enum ChunkType {
+  ROUTE_HANDLER
+  SCHEMA_MODEL
+  EVENT_HANDLER
+  SERVICE_METHOD
+  CONFIGURATION
+  README
+  FILE_SUMMARY
+}
+
+enum EdgeType {
+  HTTP_CALL
+  EVENT_PUB_SUB
+  SHARED_DATABASE
+  IMPORT
+}
