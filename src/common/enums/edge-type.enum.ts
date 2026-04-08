@@ -1,0 +1,6 @@
+export enum EdgeType {
+  HTTP_CALL = 'HTTP_CALL',
+  EVENT_PUB_SUB = 'EVENT_PUB_SUB',
+  SHARED_DATABASE = 'SHARED_DATABASE',
+  IMPORT = 'IMPORT',
+}

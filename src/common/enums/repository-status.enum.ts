@@ -1,0 +1,8 @@
+export enum RepositoryStatus {
+  PENDING = 'PENDING',
+  CLONING = 'CLONING',
+  EXTRACTING = 'EXTRACTING',
+  EMBEDDING = 'EMBEDDING',
+  READY = 'READY',
+  FAILED = 'FAILED',
+}
