@@ -29,6 +29,9 @@ class EnvironmentVariables {
   @IsString()
   CLONE_BASE_PATH!: string;
 
+  @IsString()
+  LLM_MODEL!: string;
+
   @IsNumber()
   SIMILARITY_THRESHOLD!: number;
 
@@ -59,6 +62,7 @@ export default () => ({
   embeddingDimensions: parseInt(process.env.EMBEDDING_DIMENSIONS ?? '1536', 10),
   githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
   cloneBasePath: process.env.CLONE_BASE_PATH ?? '/tmp/repos',
+  llmModel: process.env.LLM_MODEL ?? 'gpt-4o',
   similarityThreshold: parseFloat(process.env.SIMILARITY_THRESHOLD ?? '0.78'),
   port: parseInt(process.env.PORT ?? '3000', 10),
   nodeEnv: process.env.NODE_ENV ?? 'development',

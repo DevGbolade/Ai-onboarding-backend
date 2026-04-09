@@ -8,7 +8,7 @@ import { ServiceNodeEntity } from './entities/service-node.entity';
 
 dotenv.config();
 
-export const AppDataSource = new DataSource({
+const AppDataSource = new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL,
   entities: [RepositoryEntity, ServiceNodeEntity, ChunkEntity, DependencyEdgeEntity],
