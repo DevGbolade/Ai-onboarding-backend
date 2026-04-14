@@ -1,22 +1,13 @@
-import { Injectable } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { Injectable } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly eventEmitter: any) {}
+  constructor(private readonly eventEmitter: EventEmitter2) {}
 
-  async createUser(data: unknown) {
-    this.eventEmitter.emit('user.created', data);
-    this.eventEmitter.emit('user.welcome.sent', data);
-  }
-
-  @OnEvent('order.placed')
-  handleOrderPlaced(payload: unknown) {
-    // handle
-  }
-
-  @OnEvent('payment.confirmed')
-  handlePaymentConfirmed(payload: unknown) {
-    // handle
+  createUser(data: { name: string; email: string }) {
+    this.eventEmitter.emit("user.created", data);
+    this.eventEmitter.emit("user.welcome.sent", { email: data.email });
+    return data;
   }
 }

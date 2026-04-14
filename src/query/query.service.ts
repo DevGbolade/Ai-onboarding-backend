@@ -1,9 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
-import { ChunkType } from '../common/enums/chunk-type.enum';
-import { GraphService } from '../knowledge/graph.service';
-import { ChunkSearchResult, KnowledgeService } from '../knowledge/knowledge.service';
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import OpenAI from "openai";
+import { ChunkType } from "../common/enums/chunk-type.enum";
+import { GraphService } from "../knowledge/graph.service";
+import {
+  ChunkSearchResult,
+  KnowledgeService,
+} from "../knowledge/knowledge.service";
 
 export interface QuerySource {
   serviceId: string;
@@ -30,25 +33,28 @@ export class QueryService {
     private readonly configService: ConfigService,
   ) {
     this.openai = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+      apiKey: this.configService.get<string>("OPENAI_API_KEY"),
     });
-    this.llmModel = this.configService.get<string>('LLM_MODEL') ?? 'gpt-4o';
+    this.llmModel = this.configService.get<string>("LLM_MODEL") ?? "gpt-4o";
   }
 
   async ask(question: string, serviceFilter?: string[]): Promise<QueryAnswer> {
     // Step 1 — Retrieve relevant chunks
     let chunks: ChunkSearchResult[];
     if (serviceFilter && serviceFilter.length > 0) {
-      chunks = await this.knowledgeService.searchChunks(question, { serviceIds: serviceFilter });
+      chunks = await this.knowledgeService.searchChunks(question, {
+        serviceIds: serviceFilter,
+      });
     } else {
-      const grouped = await this.knowledgeService.searchAcrossServices(question);
+      const grouped =
+        await this.knowledgeService.searchAcrossServices(question);
       chunks = grouped.flatMap((g) => g.chunks);
     }
 
     if (chunks.length === 0) {
       return {
         answer:
-          'No relevant code was found for your question. Try rephrasing it or specify a service using the serviceFilter field.',
+          "No relevant code was found for your question. Try rephrasing it or specify a service using the serviceFilter field.",
         consultedServices: [],
         sources: [],
       };
@@ -68,17 +74,15 @@ export class QueryService {
       }),
     );
 
-    const allServiceIds = [...connectedServiceIds];
-    const serviceContexts = await Promise.all(
-      allServiceIds.map(async (serviceId) => ({
-        serviceId,
-        context: await this.knowledgeService.getServiceContext(serviceId),
-      })),
+    const { edges: allEdges, nodes: allNodes } =
+      await this.graphService.getFullGraph();
+    const involvedEdges = allEdges.filter(
+      (e) =>
+        connectedServiceIds.has(e.fromService) &&
+        connectedServiceIds.has(e.toService),
     );
-
-    const edges = await this.graphService.getFullGraph();
-    const involvedEdges = edges.filter(
-      (e) => connectedServiceIds.has(e.fromService) && connectedServiceIds.has(e.toService),
+    const involvedNodes = allNodes.filter((n) =>
+      connectedServiceIds.has(n.serviceId),
     );
 
     // Step 3 — Build prompt
@@ -87,16 +91,37 @@ export class QueryService {
         (c) =>
           `[${c.serviceId} | ${c.filePath} | ${c.chunkType}]\n${c.content}`,
       )
-      .join('\n\n---\n\n');
+      .join("\n\n---\n\n");
 
-    const contextSection = serviceContexts.map((s) => s.context).join('\n\n---\n\n');
+    const contextSection = involvedNodes
+      .map((n) => {
+        const lines: string[] = [`Service: ${n.name}`];
+        if (n.description) lines.push(`Description: ${n.description}`);
+        if (n.techStack) lines.push(`Tech Stack: ${n.techStack}`);
+        if (n.routes.length > 0) lines.push(`Routes: ${n.routes.join(", ")}`);
+        if (n.schemas.length > 0)
+          lines.push(`Schemas/Entities: ${n.schemas.join(", ")}`);
+        if (n.publishes.length > 0)
+          lines.push(`Publishes Events: ${n.publishes.join(", ")}`);
+        if (n.subscribes.length > 0)
+          lines.push(`Subscribes Events: ${n.subscribes.join(", ")}`);
+        if (n.envVars.length > 0)
+          lines.push(`Environment Variables: ${n.envVars.join(", ")}`);
+        if (n.keyFiles.length > 0)
+          lines.push(`Key Files: ${n.keyFiles.join(", ")}`);
+        return lines.join("\n");
+      })
+      .join("\n\n---\n\n");
 
     const graphSection =
       involvedEdges.length > 0
         ? involvedEdges
-            .map((e) => `${e.fromService} --[${e.edgeType}]--> ${e.toService}${e.detail ? ` (${e.detail})` : ''}`)
-            .join('\n')
-        : 'No dependency edges found between consulted services.';
+            .map(
+              (e) =>
+                `${e.fromService} --[${e.edgeType}]--> ${e.toService}${e.detail ? ` (${e.detail})` : ""}`,
+            )
+            .join("\n")
+        : "No dependency edges found between consulted services.";
 
     const systemPrompt = `You are a codebase onboarding agent helping new engineers understand a microservices system. You have access to indexed code, service metadata, and the dependency graph.
 
@@ -117,23 +142,26 @@ ${graphSection}
 Answer the question by tracing the flow across services. Mention specific routes, events, files, and tables where relevant. Be precise and cite the service and file path when referencing code.`;
 
     // Step 4 — Call LLM
-    this.logger.log(`Calling ${this.llmModel} for question: "${question.slice(0, 80)}..."`);
+    this.logger.log(
+      `Calling ${this.llmModel} for question: "${question.slice(0, 80)}..."`,
+    );
 
     const completion = await this.openai.chat.completions.create({
       model: this.llmModel,
       max_tokens: 1500,
       messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: question },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: question },
       ],
     });
 
-    const answer = completion.choices[0]?.message?.content ?? 'No answer generated.';
+    const answer =
+      completion.choices[0]?.message?.content ?? "No answer generated.";
 
     // Step 5 — Return
     return {
       answer,
-      consultedServices: allServiceIds,
+      consultedServices: [...connectedServiceIds],
       sources: chunks.map((c) => ({
         serviceId: c.serviceId,
         filePath: c.filePath,

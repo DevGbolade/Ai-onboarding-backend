@@ -25,7 +25,8 @@
       "Bash(git branch:*)",
       "Bash(git stash:*)",
       "Bash(find src/:*)",
-      "Bash(find test/:*)"
+      "Bash(find test/:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [
       "Bash(rm -rf /)",

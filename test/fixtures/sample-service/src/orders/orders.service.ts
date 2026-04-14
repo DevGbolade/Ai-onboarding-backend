@@ -1,11 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable } from "@nestjs/common";
+import { OnEvent } from "@nestjs/event-emitter";
+import { HttpService } from "@nestjs/axios";
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly httpService: any) {}
+  constructor(private readonly httpService: HttpService) {}
 
-  async createOrder(userId: string, total: number): Promise<unknown> {
-    const user = await this.httpService.get('http://user-service:3001/users/:id').toPromise();
-    return { userId, total, user };
+  @OnEvent("order.placed")
+  handleOrderPlaced(payload: { userId: string; total: number }) {
+    this.httpService.get(`http://user-service/api/users/${payload.userId}`);
+  }
+
+  @OnEvent("payment.confirmed")
+  handlePaymentConfirmed(payload: { orderId: string }) {
+    return payload;
   }
 }
