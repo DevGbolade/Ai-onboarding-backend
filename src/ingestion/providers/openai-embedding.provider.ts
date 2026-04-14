@@ -1,7 +1,11 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
-import { IEmbeddingProvider } from '../../common/interfaces/embedding-provider.interface';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import OpenAI from "openai";
+import { IEmbeddingProvider } from "../../common/interfaces/embedding-provider.interface";
 
 const BATCH_SIZE = 100;
 const RETRY_ATTEMPTS = 3;
@@ -16,10 +20,13 @@ export class OpenAIEmbeddingProvider implements IEmbeddingProvider {
 
   constructor(private readonly configService: ConfigService) {
     this.client = new OpenAI({
-      apiKey: configService.get<string>('OPENAI_API_KEY'),
+      apiKey: configService.get<string>("openai.apiKey"),
     });
-    this.model = configService.get<string>('EMBEDDING_MODEL') ?? 'text-embedding-3-small';
-    this._dimensions = configService.get<number>('EMBEDDING_DIMENSIONS') ?? 1536;
+    this.model =
+      configService.get<string>("openai.embeddingModel") ??
+      "text-embedding-3-small";
+    this._dimensions =
+      configService.get<number>("openai.embeddingDimensions") ?? 1536;
   }
 
   get dimensions(): number {
@@ -67,7 +74,9 @@ export class OpenAIEmbeddingProvider implements IEmbeddingProvider {
 
         if (status === 429) {
           const backoffMs = Math.pow(2, attempt) * 1000;
-          this.logger.warn(`Rate limited by OpenAI, backing off ${backoffMs}ms (attempt ${attempt + 1}/${RETRY_ATTEMPTS})`);
+          this.logger.warn(
+            `Rate limited by OpenAI, backing off ${backoffMs}ms (attempt ${attempt + 1}/${RETRY_ATTEMPTS})`,
+          );
           await this.delay(backoffMs);
           continue;
         }
@@ -77,13 +86,16 @@ export class OpenAIEmbeddingProvider implements IEmbeddingProvider {
       }
     }
 
-    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    const message =
+      lastError instanceof Error ? lastError.message : String(lastError);
     this.logger.error(`OpenAI embedding call failed: ${message}`);
-    throw new InternalServerErrorException(`Embedding generation failed: ${message}`);
+    throw new InternalServerErrorException(
+      `Embedding generation failed: ${message}`,
+    );
   }
 
   private extractStatus(err: unknown): number | undefined {
-    if (err !== null && typeof err === 'object' && 'status' in err) {
+    if (err !== null && typeof err === "object" && "status" in err) {
       return (err as { status: number }).status;
     }
     return undefined;

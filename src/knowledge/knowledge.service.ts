@@ -33,6 +33,7 @@ interface SearchOptions {
 @Injectable()
 export class KnowledgeService {
   private readonly defaultThreshold: number;
+  private readonly crossServiceThreshold: number;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -44,7 +45,12 @@ export class KnowledgeService {
     private readonly configService: ConfigService,
   ) {
     this.defaultThreshold =
-      this.configService.get<number>("similarityThreshold") ?? 0.25;
+      this.configService.get<number>("ingestion.similarityThreshold") ?? 0.25;
+    // text-embedding-3-small produces meaningful semantic matches at 0.2–0.45.
+    // Do NOT fall back to similarityThreshold here — that key defaults to 0.78
+    // and would filter out all relevant chunks.
+    this.crossServiceThreshold =
+      this.configService.get<number>("ingestion.crossServiceThreshold") ?? 0.2;
   }
 
   async searchChunks(
@@ -96,28 +102,62 @@ export class KnowledgeService {
     }));
   }
 
+  async findChunksByKeyword(
+    keywords: string[],
+    options: { serviceIds?: string[]; limit?: number } = {},
+  ): Promise<ChunkSearchResult[]> {
+    if (keywords.length === 0) return [];
+    const { serviceIds, limit = 3 } = options;
+
+    // Build positional params for each keyword (ILIKE exact text match — no semantic drift).
+    const params: unknown[] = keywords.map((k) => `%${k}%`);
+    const conditions = keywords
+      .map((_, i) => `content ILIKE $${i + 1}`)
+      .join(" OR ");
+
+    let sql = `SELECT id, "repositoryId", "serviceId", "chunkType", "filePath", content, metadata, 1.0 AS similarity FROM chunks WHERE (${conditions})`;
+
+    if (serviceIds && serviceIds.length > 0) {
+      params.push(serviceIds);
+      sql += ` AND "serviceId" = ANY($${params.length}::text[])`;
+    }
+
+    params.push(limit);
+    sql += ` LIMIT $${params.length}`;
+
+    const rows = (await this.dataSource.query(
+      sql,
+      params,
+    )) as ChunkSearchResult[];
+    return rows.map((row) => ({ ...row, similarity: 1.0 }));
+  }
+
   async searchAcrossServices(
     query: string,
-    limit: number = 5,
+    limit: number = 15,
   ): Promise<ServiceSearchResults[]> {
-    const rows = (await this.dataSource.query(
-      'SELECT DISTINCT "serviceId" FROM chunks',
-    )) as Array<{ serviceId: string }>;
-    const serviceIds = rows.map((r) => r.serviceId);
+    // Fetch extra to compensate for per-file deduplication below.
+    const raw = await this.searchChunks(query, {
+      limit: limit * 2,
+      threshold: this.crossServiceThreshold,
+    });
 
-    const allResults = await Promise.all(
-      serviceIds.map((serviceId) =>
-        this.searchChunks(query, { serviceIds: [serviceId], limit: 3 }),
-      ),
-    );
-
-    const flat = allResults
-      .flat()
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, limit);
+    // Cap at 2 chunks per file path so a single large file (e.g. wallet.service.ts)
+    // cannot crowd out more relevant files from other parts of the codebase.
+    const perFileCount = new Map<string, number>();
+    const chunks: ChunkSearchResult[] = [];
+    for (const chunk of raw) {
+      const key = `${chunk.serviceId}:${chunk.filePath}`;
+      const count = perFileCount.get(key) ?? 0;
+      if (count < 2) {
+        chunks.push(chunk);
+        perFileCount.set(key, count + 1);
+      }
+      if (chunks.length === limit) break;
+    }
 
     const grouped = new Map<string, ChunkSearchResult[]>();
-    for (const chunk of flat) {
+    for (const chunk of chunks) {
       if (!grouped.has(chunk.serviceId)) grouped.set(chunk.serviceId, []);
       grouped.get(chunk.serviceId)!.push(chunk);
     }

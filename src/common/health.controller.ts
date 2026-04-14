@@ -1,11 +1,17 @@
-import { Controller, Get, HttpException, HttpStatus, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { DataSource } from 'typeorm';
-import Redis from 'ioredis';
+import {
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { DataSource } from "typeorm";
+import Redis from "ioredis";
 
-@ApiTags('health')
-@Controller('health')
+@ApiTags("health")
+@Controller("health")
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);
 
@@ -15,7 +21,7 @@ export class HealthController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Check service health (DB + Redis)' })
+  @ApiOperation({ summary: "Check service health (DB + Redis)" })
   async check() {
     let dbOk = false;
     let redisOk = false;
@@ -23,28 +29,32 @@ export class HealthController {
 
     // DB check
     try {
-      await this.dataSource.query('SELECT 1');
+      await this.dataSource.query("SELECT 1");
       dbOk = true;
     } catch (err) {
-      this.logger.error('DB health check failed', err);
-      errors.push('Database unreachable');
+      this.logger.error("DB health check failed", err);
+      errors.push("Database unreachable");
     }
 
     // Redis check
-    const redisUrl = this.configService.get<string>('REDIS_URL') ?? 'redis://localhost:6379';
-    const redis = new Redis(redisUrl, { lazyConnect: true, enableReadyCheck: false });
+    const redisUrl =
+      this.configService.get<string>("redis.url") ?? "redis://localhost:6379";
+    const redis = new Redis(redisUrl, {
+      lazyConnect: true,
+      enableReadyCheck: false,
+    });
     try {
       await redis.ping();
       redisOk = true;
     } catch (err) {
-      this.logger.error('Redis health check failed', err);
-      errors.push('Redis unreachable');
+      this.logger.error("Redis health check failed", err);
+      errors.push("Redis unreachable");
     } finally {
       redis.disconnect();
     }
 
     const result = {
-      status: dbOk && redisOk ? 'ok' : 'degraded',
+      status: dbOk && redisOk ? "ok" : "degraded",
       db: dbOk,
       redis: redisOk,
       timestamp: new Date().toISOString(),
