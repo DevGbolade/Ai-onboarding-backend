@@ -1,16 +1,13 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from "typeorm";
 
-@Entity('orders')
+@Entity("orders")
 export class OrderEntity {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
 
   @Column()
-  userId!: string;
+  userId: string;
 
-  @Column('decimal')
-  total!: number;
-
-  @Column({ default: 'pending' })
-  status!: string;
+  @Column()
+  total: number;
 }

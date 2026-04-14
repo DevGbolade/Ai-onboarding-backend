@@ -1,21 +1,25 @@
-import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Job, Queue } from 'bullmq';
-import * as fs from 'fs';
-import * as path from 'path';
-import { Project } from 'ts-morph';
-import { Repository } from 'typeorm';
-import { DependencyInfo, ExtractedMetadata, RouteInfo } from '../../common/interfaces/extracted-metadata.interface';
-import { RepositoryStatus } from '../../common/enums/repository-status.enum';
-import { RepositoryEntity } from '../../database/entities/repository.entity';
-import { ServiceNodeEntity } from '../../database/entities/service-node.entity';
-import { DependencyExtractor } from '../extractors/dependency.extractor';
-import { EnvExtractor } from '../extractors/env.extractor';
-import { EventExtractor } from '../extractors/event.extractor';
-import { NestjsExtractor } from '../extractors/nestjs.extractor';
-import { TypeormExtractor } from '../extractors/typeorm.extractor';
+import { InjectQueue, Processor, WorkerHost } from "@nestjs/bullmq";
+import { Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Job, Queue } from "bullmq";
+import * as fs from "fs";
+import * as path from "path";
+import { Project } from "ts-morph";
+import { Repository } from "typeorm";
+import {
+  DependencyInfo,
+  ExtractedMetadata,
+  RouteInfo,
+} from "../../common/interfaces/extracted-metadata.interface";
+import { RepositoryStatus } from "../../common/enums/repository-status.enum";
+import { RepositoryEntity } from "../../database/entities/repository.entity";
+import { ServiceNodeEntity } from "../../database/entities/service-node.entity";
+import { DependencyExtractor } from "../extractors/dependency.extractor";
+import { EnvExtractor } from "../extractors/env.extractor";
+import { EventExtractor } from "../extractors/event.extractor";
+import { NestjsExtractor } from "../extractors/nestjs.extractor";
+import { TypeormExtractor } from "../extractors/typeorm.extractor";
 
 interface ExtractJobData {
   repositoryId: string;
@@ -23,16 +27,16 @@ interface ExtractJobData {
   projectPath: string;
 }
 
-@Processor('extract')
+@Processor("extract")
 export class ExtractWorker extends WorkerHost {
-  private readonly logger = new Logger('ExtractWorker');
+  private readonly logger = new Logger("ExtractWorker");
 
   constructor(
     @InjectRepository(RepositoryEntity)
     private readonly repositoryRepo: Repository<RepositoryEntity>,
     @InjectRepository(ServiceNodeEntity)
     private readonly serviceNodeRepo: Repository<ServiceNodeEntity>,
-    @InjectQueue('embed')
+    @InjectQueue("embed")
     private readonly embedQueue: Queue,
     private readonly configService: ConfigService,
     private readonly nestjsExtractor: NestjsExtractor,
@@ -47,11 +51,15 @@ export class ExtractWorker extends WorkerHost {
   async process(job: Job<ExtractJobData>): Promise<void> {
     const { repositoryId, serviceId, projectPath } = job.data;
 
-    const repo = await this.repositoryRepo.findOneByOrFail({ id: repositoryId });
+    const repo = await this.repositoryRepo.findOneByOrFail({
+      id: repositoryId,
+    });
 
     this.logger.log(`Starting extraction for ${repo.name} (${repositoryId})`);
 
-    await this.repositoryRepo.update(repositoryId, { status: RepositoryStatus.EXTRACTING });
+    await this.repositoryRepo.update(repositoryId, {
+      status: RepositoryStatus.EXTRACTING,
+    });
 
     try {
       const [nestjsResult, typeormResult, eventResult, envResult, depResult] =
@@ -73,8 +81,8 @@ export class ExtractWorker extends WorkerHost {
 
       this.logger.log(
         `Extraction results for ${repo.name}: routes=${merged.routes.length}, ` +
-        `schemas=${merged.schemas.length}, events=${merged.publishedEvents.length}+${merged.subscribedEvents.length}, ` +
-        `envVars=${merged.envVars.length}, deps=${merged.dependencies.length}`,
+          `schemas=${merged.schemas.length}, events=${merged.publishedEvents.length}+${merged.subscribedEvents.length}, ` +
+          `envVars=${merged.envVars.length}, deps=${merged.dependencies.length}`,
       );
 
       merged.techStack = this.detectTechStack(projectPath);
@@ -91,19 +99,29 @@ export class ExtractWorker extends WorkerHost {
           schemas: merged.schemas,
           publishes: merged.publishedEvents,
           subscribes: merged.subscribedEvents,
-          dependencies: merged.dependencies.map((d: DependencyInfo) => d.targetService),
+          dependencies: merged.dependencies.map(
+            (d: DependencyInfo) => d.detail ?? d.targetService,
+          ),
           techStack: merged.techStack,
           keyFiles: merged.keyFiles,
           envVars: merged.envVars,
         }),
       );
 
-      await this.embedQueue.add('embed', { repositoryId, serviceId, projectPath });
+      await this.embedQueue.add("embed", {
+        repositoryId,
+        serviceId,
+        projectPath,
+      });
 
-      this.logger.log(`Extraction complete for ${repo.name} (${repositoryId}), embed job queued`);
+      this.logger.log(
+        `Extraction complete for ${repo.name} (${repositoryId}), embed job queued`,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Extraction failed for ${repo.name} (${repositoryId}): ${message}`);
+      this.logger.error(
+        `Extraction failed for ${repo.name} (${repositoryId}): ${message}`,
+      );
 
       await this.repositoryRepo.update(repositoryId, {
         status: RepositoryStatus.FAILED,
@@ -123,21 +141,24 @@ export class ExtractWorker extends WorkerHost {
       dependencies: [],
       envVars: [],
       keyFiles: [],
-      description: '',
-      techStack: '',
+      description: "",
+      techStack: "",
     };
 
     for (const result of results) {
-      if (result.status === 'rejected') {
+      if (result.status === "rejected") {
         this.logger.error(`Extractor failed: ${String(result.reason)}`);
         continue;
       }
       const partial = result.value;
       if (partial.routes) merged.routes.push(...partial.routes);
       if (partial.schemas) merged.schemas.push(...partial.schemas);
-      if (partial.publishedEvents) merged.publishedEvents.push(...partial.publishedEvents);
-      if (partial.subscribedEvents) merged.subscribedEvents.push(...partial.subscribedEvents);
-      if (partial.dependencies) merged.dependencies.push(...partial.dependencies);
+      if (partial.publishedEvents)
+        merged.publishedEvents.push(...partial.publishedEvents);
+      if (partial.subscribedEvents)
+        merged.subscribedEvents.push(...partial.subscribedEvents);
+      if (partial.dependencies)
+        merged.dependencies.push(...partial.dependencies);
       if (partial.envVars) merged.envVars.push(...partial.envVars);
       if (partial.keyFiles) merged.keyFiles.push(...partial.keyFiles);
       if (partial.description) merged.description = partial.description;
@@ -150,15 +171,24 @@ export class ExtractWorker extends WorkerHost {
     merged.subscribedEvents = [...new Set(merged.subscribedEvents)];
     merged.envVars = [...new Set(merged.envVars)];
 
+    // Deduplicate dependencies by detail/targetService key
+    const seenDeps = new Set<string>();
+    merged.dependencies = merged.dependencies.filter((d) => {
+      const key = d.detail ?? d.targetService;
+      if (seenDeps.has(key)) return false;
+      seenDeps.add(key);
+      return true;
+    });
+
     return merged;
   }
 
   private detectTechStack(projectPath: string): string {
-    const pkgPath = path.join(projectPath, 'package.json');
-    if (!fs.existsSync(pkgPath)) return '';
+    const pkgPath = path.join(projectPath, "package.json");
+    if (!fs.existsSync(pkgPath)) return "";
 
     try {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as {
         dependencies?: Record<string, string>;
         devDependencies?: Record<string, string>;
       };
@@ -167,37 +197,37 @@ export class ExtractWorker extends WorkerHost {
         ...pkg.devDependencies,
       };
       const stack: string[] = [];
-      if (deps['@nestjs/core']) stack.push('NestJS');
-      if (deps['express']) stack.push('Express');
-      if (deps['fastify']) stack.push('Fastify');
-      if (deps['typeorm']) stack.push('TypeORM');
-      if (deps['prisma'] || deps['@prisma/client']) stack.push('Prisma');
-      if (deps['mongoose']) stack.push('Mongoose');
-      if (deps['bullmq'] || deps['bull']) stack.push('BullMQ');
-      if (deps['redis'] || deps['ioredis']) stack.push('Redis');
-      if (deps['graphql'] || deps['@nestjs/graphql']) stack.push('GraphQL');
-      return stack.join(', ');
+      if (deps["@nestjs/core"]) stack.push("NestJS");
+      if (deps["express"]) stack.push("Express");
+      if (deps["fastify"]) stack.push("Fastify");
+      if (deps["typeorm"]) stack.push("TypeORM");
+      if (deps["prisma"] || deps["@prisma/client"]) stack.push("Prisma");
+      if (deps["mongoose"]) stack.push("Mongoose");
+      if (deps["bullmq"] || deps["bull"]) stack.push("BullMQ");
+      if (deps["redis"] || deps["ioredis"]) stack.push("Redis");
+      if (deps["graphql"] || deps["@nestjs/graphql"]) stack.push("GraphQL");
+      return stack.join(", ");
     } catch {
-      return '';
+      return "";
     }
   }
 
   private extractReadmeDescription(projectPath: string): string {
-    for (const name of ['README.md', 'readme.md', 'Readme.md']) {
+    for (const name of ["README.md", "readme.md", "Readme.md"]) {
       const readmePath = path.join(projectPath, name);
       if (!fs.existsSync(readmePath)) continue;
 
       try {
-        const content = fs.readFileSync(readmePath, 'utf-8');
+        const content = fs.readFileSync(readmePath, "utf-8");
         // Skip heading lines, find the first non-empty paragraph
-        const lines = content.split('\n');
+        const lines = content.split("\n");
         const paragraphLines: string[] = [];
         let inParagraph = false;
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (trimmed.startsWith('#')) continue;
-          if (trimmed === '') {
+          if (trimmed.startsWith("#")) continue;
+          if (trimmed === "") {
             if (inParagraph) break;
             continue;
           }
@@ -205,21 +235,21 @@ export class ExtractWorker extends WorkerHost {
           paragraphLines.push(trimmed);
         }
 
-        return paragraphLines.join(' ').slice(0, 500);
+        return paragraphLines.join(" ").slice(0, 500);
       } catch {
-        return '';
+        return "";
       }
     }
-    return '';
+    return "";
   }
 
   private findKeyFiles(projectPath: string, limit = 10): string[] {
-    const srcPath = path.join(projectPath, 'src');
+    const srcPath = path.join(projectPath, "src");
     if (!fs.existsSync(srcPath)) return [];
 
     try {
       const project = new Project({ skipAddingFilesFromTsConfig: true });
-      project.addSourceFilesAtPaths([path.join(srcPath, '**/*.ts')]);
+      project.addSourceFilesAtPaths([path.join(srcPath, "**/*.ts")]);
 
       const refCounts = new Map<string, number>();
 

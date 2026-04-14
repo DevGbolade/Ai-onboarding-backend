@@ -1,22 +1,22 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Job } from 'bullmq';
-import { Repository } from 'typeorm';
-import { EdgeType } from '../../common/enums/edge-type.enum';
-import { RepositoryStatus } from '../../common/enums/repository-status.enum';
-import { DependencyEdgeEntity } from '../../database/entities/dependency-edge.entity';
-import { RepositoryEntity } from '../../database/entities/repository.entity';
-import { ServiceNodeEntity } from '../../database/entities/service-node.entity';
+import { Processor, WorkerHost } from "@nestjs/bullmq";
+import { Logger } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Job } from "bullmq";
+import { Repository } from "typeorm";
+import { EdgeType } from "../../common/enums/edge-type.enum";
+import { RepositoryStatus } from "../../common/enums/repository-status.enum";
+import { DependencyEdgeEntity } from "../../database/entities/dependency-edge.entity";
+import { RepositoryEntity } from "../../database/entities/repository.entity";
+import { ServiceNodeEntity } from "../../database/entities/service-node.entity";
 
 interface GraphJobData {
   repositoryId: string;
   serviceId: string;
 }
 
-@Processor('graph')
+@Processor("graph")
 export class GraphWorker extends WorkerHost {
-  private readonly logger = new Logger('GraphWorker');
+  private readonly logger = new Logger("GraphWorker");
 
   constructor(
     @InjectRepository(RepositoryEntity)
@@ -32,15 +32,21 @@ export class GraphWorker extends WorkerHost {
   async process(job: Job<GraphJobData>): Promise<void> {
     const { repositoryId, serviceId } = job.data;
 
-    const repo = await this.repositoryRepo.findOneByOrFail({ id: repositoryId });
-    this.logger.log(`Building dependency graph for ${repo.name} (${repositoryId})`);
+    const repo = await this.repositoryRepo.findOneByOrFail({
+      id: repositoryId,
+    });
+    this.logger.log(
+      `Building dependency graph for ${repo.name} (${repositoryId})`,
+    );
 
     try {
       await this.edgeRepo.delete({ fromService: serviceId });
 
       const thisNode = await this.serviceNodeRepo.findOneBy({ repositoryId });
       if (!thisNode) {
-        this.logger.warn(`No ServiceNode found for repositoryId=${repositoryId}, skipping graph build`);
+        this.logger.warn(
+          `No ServiceNode found for repositoryId=${repositoryId}, skipping graph build`,
+        );
         await this.repositoryRepo.update(repositoryId, {
           status: RepositoryStatus.READY,
           lastIndexed: new Date(),
@@ -49,18 +55,29 @@ export class GraphWorker extends WorkerHost {
       }
 
       const allNodes = await this.serviceNodeRepo.find();
-      const otherNodes = allNodes.filter((n) => n.repositoryId !== repositoryId);
+      const otherNodes = allNodes.filter(
+        (n) => n.repositoryId !== repositoryId,
+      );
+
+      // Build a map from repositoryId → serviceId for all other repos
+      const otherRepos = await this.repositoryRepo.findBy(
+        otherNodes.map((n) => ({ id: n.repositoryId })),
+      );
+      const repoIdToServiceId = new Map(
+        otherRepos.map((r) => [r.id, r.serviceId]),
+      );
 
       const newEdges: Partial<DependencyEdgeEntity>[] = [];
 
       // EVENT MATCHING: publishes → subscribes
       for (const event of thisNode.publishes) {
         for (const other of otherNodes) {
-          if (other.subscribes.includes(event)) {
+          const toService = repoIdToServiceId.get(other.repositoryId);
+          if (toService && other.subscribes.includes(event)) {
             newEdges.push(
               this.edgeRepo.create({
                 fromService: serviceId,
-                toService: other.repositoryId,
+                toService,
                 edgeType: EdgeType.EVENT_PUB_SUB,
                 detail: event,
               }),
@@ -73,14 +90,17 @@ export class GraphWorker extends WorkerHost {
       for (const dep of thisNode.dependencies) {
         const matched = this.matchHttpDependency(dep, otherNodes);
         if (matched) {
-          newEdges.push(
-            this.edgeRepo.create({
-              fromService: serviceId,
-              toService: matched.repositoryId,
-              edgeType: EdgeType.HTTP_CALL,
-              detail: dep,
-            }),
-          );
+          const toService = repoIdToServiceId.get(matched.repositoryId);
+          if (toService) {
+            newEdges.push(
+              this.edgeRepo.create({
+                fromService: serviceId,
+                toService,
+                edgeType: EdgeType.HTTP_CALL,
+                detail: dep,
+              }),
+            );
+          }
         }
       }
 
@@ -88,7 +108,9 @@ export class GraphWorker extends WorkerHost {
         await this.edgeRepo.save(newEdges);
       }
 
-      this.logger.log(`Created ${newEdges.length} dependency edges for ${repo.name}`);
+      this.logger.log(
+        `Created ${newEdges.length} dependency edges for ${repo.name}`,
+      );
 
       await this.repositoryRepo.update(repositoryId, {
         status: RepositoryStatus.READY,
@@ -96,7 +118,9 @@ export class GraphWorker extends WorkerHost {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Graph build failed for ${repo.name} (${repositoryId}): ${message}`);
+      this.logger.error(
+        `Graph build failed for ${repo.name} (${repositoryId}): ${message}`,
+      );
 
       await this.repositoryRepo.update(repositoryId, {
         status: RepositoryStatus.FAILED,
@@ -109,23 +133,47 @@ export class GraphWorker extends WorkerHost {
     dep: string,
     nodes: ServiceNodeEntity[],
   ): ServiceNodeEntity | undefined {
-    // dep is a URL string like "https://user-service/api/users" or a service name
-    let depPath: string;
+    let depHostname: string | null = null;
+    let depPath: string = dep;
+
     try {
-      depPath = new URL(dep).pathname;
+      const parsed = new URL(dep);
+      depHostname = parsed.hostname;
+      depPath = parsed.pathname;
     } catch {
       depPath = dep;
     }
 
     for (const node of nodes) {
+      // Primary: match hostname against service name
+      if (depHostname) {
+        const normalizedHost = depHostname
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, "");
+        const normalizedName = node.name
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, "");
+        if (
+          normalizedHost === normalizedName ||
+          normalizedHost.includes(normalizedName) ||
+          normalizedName.includes(normalizedHost)
+        ) {
+          return node;
+        }
+      }
+
+      // Fallback: match path against routes (for relative-URL dependencies)
       for (const route of node.routes) {
-        // routes stored as "METHOD /path"
-        const routePath = route.split(' ')[1] ?? route;
-        if (depPath.includes(routePath) || routePath.includes(depPath)) {
+        const routePath = route.split(" ")[1] ?? route;
+        if (
+          routePath.length > 1 &&
+          (depPath.startsWith(routePath) || routePath.startsWith(depPath))
+        ) {
           return node;
         }
       }
     }
+
     return undefined;
   }
 }
