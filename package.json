@@ -1,7 +1,7 @@
 {
-  "name": "Ai-onboarding-backend",
+  "name": "ai-onboarding-backend",
   "version": "0.0.1",
-  "description": "",
+  "description": "NestJS-powered RAG engine that ingests microservice repositories, extracts structured metadata via AST analysis, generates embeddings, and provides cross-service knowledge retrieval for engineering onboarding",
   "author": "",
   "private": true,
   "license": "UNLICENSED",

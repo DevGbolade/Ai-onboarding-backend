@@ -1,6 +1,22 @@
 # Codebase Onboarding Agent — Backend
 
-A NestJS pipeline that ingests microservice repositories, extracts structured metadata (routes, schemas, events, dependencies, environment variables) via AST analysis, generates OpenAI embeddings, and stores them in PostgreSQL + pgvector. It exposes a RAG endpoint that new engineers can query to understand how services interact — tracing flows across HTTP calls, events, and shared databases — without reading every codebase manually.
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-11-red)](https://nestjs.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)](https://www.postgresql.org/)
+[![License](https://img.shields.io/badge/license-UNLICENSED-lightgrey)](#)
+
+**An AI-powered knowledge engine that helps engineers understand microservice architectures instantly.**
+
+This NestJS backend ingests microservice repositories, extracts structured metadata (routes, schemas, events, dependencies, environment variables) via AST analysis, generates OpenAI embeddings, and stores them in PostgreSQL + pgvector. It exposes a RAG endpoint that new engineers can query to understand how services interact — tracing flows across HTTP calls, events, and shared databases — **without reading every codebase manually**.
+
+### Key Features
+
+- 🔍 **Intelligent Code Analysis** — Automatic extraction of routes, schemas, events, and dependencies using TypeScript AST parsing
+- 🤖 **Vector-Powered Search** — Semantic search across all codebases using OpenAI embeddings + pgvector
+- 🔗 **Service Graph Mapping** — Automatically builds a dependency graph showing inter-service communication patterns
+- 🚀 **Scalable Pipeline** — Asynchronous job queue (BullMQ) for parallel repository indexing
+- 📚 **RAG Endpoint** — Query across multiple services to get cross-service context in natural language
+- 🪝 **GitHub Integration** — Webhook support for automatic re-indexing on code changes
 
 ## Architecture
 
